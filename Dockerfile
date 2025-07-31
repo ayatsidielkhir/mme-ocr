@@ -1,26 +1,25 @@
-# ---- Image de base Python ----
 FROM python:3.11-slim
 
-# ---- Installer dépendances système ----
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+# Installer Tesseract + toutes les langues + utilitaires nécessaires
+RUN apt-get update && apt-get install -y \
     tesseract-ocr \
-    poppler-utils && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    tesseract-ocr-fra \
+    tesseract-ocr-ara \
+    poppler-utils \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# ---- Dossier de travail ----
+# Créer dossier app
 WORKDIR /app
 
-# ---- Copier et installer les dépendances Python ----
-COPY requirements.txt .
+# Copier les fichiers du projet
+COPY . /app
+
+# Installer dépendances Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ---- Copier le code du projet ----
-COPY . .
-
-# ---- Exposer le port ----
+# Exposer le port pour FastAPI
 EXPOSE 8000
 
-# ---- Lancer FastAPI ----
+# Lancer l'application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
