@@ -12,9 +12,14 @@ from datetime import datetime
 
 app = FastAPI()
 
+origins = [
+    "https://mme-express.ma",      # ton domaine de prod
+    "http://localhost:3000",       # pour les tests locaux
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
