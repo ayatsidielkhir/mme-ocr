@@ -23,10 +23,14 @@ app.add_middleware(
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# === Utility functions ===
+# === Utility ===
+def clean_text(text: str):
+    """Supprime caractères invisibles RTL (U+200E, U+200F)"""
+    return re.sub(r'[\u200e\u200f]', '', text)
+
 def preprocess_image(img: Image.Image) -> Image.Image:
-    """Convert to grayscale and enhance for better OCR speed/accuracy."""
-    img = img.convert("L")  # grayscale
+    """Prétraitement pour améliorer OCR."""
+    img = img.convert("L")
     img = ImageEnhance.Contrast(img).enhance(1.5)
     img = img.filter(ImageFilter.SHARPEN)
     return img
@@ -52,10 +56,10 @@ def extract_latest_date(text: str):
         return max(parsed_dates).strftime("%d.%m.%Y")
     return None
 
-# === CIN extraction ===
+# === Extraction CIN ===
 def extract_cin_info(text: str):
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    full_text = " ".join(lines)
+    lines = [clean_text(line.strip()) for line in text.splitlines() if line.strip()]
+    full_text = clean_text(" ".join(lines))
 
     cin = re.search(r'\b([A-Z]{1,2}\s?\d{5,8})\b', full_text)
     cin_value = cin.group(1).replace(" ", "") if cin else None
@@ -63,19 +67,21 @@ def extract_cin_info(text: str):
     date_naissance = re.search(r'N[ée]{1,2}[^0-9]{0,10}(\d{2}[./-]\d{2}[./-]\d{4})', full_text, re.IGNORECASE)
     date_exp = re.search(r'Valable[^\d]{0,15}(\d{2}[./-]\d{2}[./-]\d{4})', full_text, re.IGNORECASE)
 
-    # Nom et prénom depuis MRZ ou majuscules
+    majuscules = [l for l in lines if re.fullmatch(r"[A-ZÉÈÀÂÛÎÔÊ\- ]{3,30}", l)]
     nom, prenom = "", ""
-    mrz_line = next((l for l in lines if '<<' in l), None)
-    if mrz_line:
-        match = re.match(r'^([A-Z]+)<<([A-Z]+)', mrz_line)
-        if match:
-            nom, prenom = match.group(1), match.group(2)
 
+    if len(majuscules) >= 2:
+        prenom = majuscules[0].strip()
+        nom = majuscules[1].strip()
+
+    # Fallback MRZ
     if not nom or not prenom:
-        majuscules = [l for l in lines if re.fullmatch(r"[A-ZÉÈÀÂÛÎÔÊ\-\s]{3,30}", l)]
-        if len(majuscules) >= 2:
-            nom = majuscules[-1]
-            prenom = majuscules[0]
+        mrz_line = next((l for l in lines if '<<' in l), None)
+        if mrz_line:
+            match = re.match(r'^([A-Z]+)<<([A-Z]+)', mrz_line)
+            if match:
+                nom = nom or match.group(1)
+                prenom = prenom or match.group(2)
 
     return {
         "document": "CIN",
@@ -86,7 +92,7 @@ def extract_cin_info(text: str):
         "prenom": prenom
     }
 
-# === Permis / Visa extraction ===
+# === Permis / Visa ===
 def extract_permis_or_visa_info(text: str):
     latest_date = extract_latest_date(text)
     return {
@@ -94,7 +100,7 @@ def extract_permis_or_visa_info(text: str):
         "date_expiration": latest_date
     }
 
-# === Carte Grise extraction ===
+# === Carte Grise ===
 def extract_carte_grise_info(text: str):
     date_exp = re.search(r'Fin de validité\s*:?[\s\n]*(\d{2}[./-]\d{2}[./-]\d{4})', text, re.IGNORECASE)
     return {
@@ -110,7 +116,6 @@ async def ocr_endpoint(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        # Convert PDF → image (only first page)
         if file.filename.lower().endswith(".pdf"):
             images = convert_from_path(file_path, dpi=200, first_page=1, last_page=1)
         else:
@@ -121,7 +126,9 @@ async def ocr_endpoint(file: UploadFile = File(...)):
             img = preprocess_image(img)
             full_text += pytesseract.image_to_string(img, lang="fra+ara") + "\n"
 
-        # Detect document type
+        full_text = clean_text(full_text)
+
+        # Détection type document
         text_upper = full_text.upper()
         if "CARTE NATIONALE D'IDENTITE" in text_upper:
             data = extract_cin_info(full_text)
