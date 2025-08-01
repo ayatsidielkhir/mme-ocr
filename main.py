@@ -67,14 +67,23 @@ def extract_cin_info(text: str):
     date_naissance = re.search(r'N[ée]{1,2}[^0-9]{0,10}(\d{2}[./-]\d{2}[./-]\d{4})', full_text, re.IGNORECASE)
     date_exp = re.search(r'Valable[^\d]{0,15}(\d{2}[./-]\d{2}[./-]\d{4})', full_text, re.IGNORECASE)
 
-    majuscules = [l for l in lines if re.fullmatch(r"[A-ZÉÈÀÂÛÎÔÊ\- ]{3,30}", l)]
     nom, prenom = "", ""
 
-    if len(majuscules) >= 2:
-        prenom = majuscules[0].strip()
-        nom = majuscules[1].strip()
+    # 🔥 Nouveau : détection nom + prénom dans tout le texte
+    match_names = re.search(r'\b([A-ZÉÈÀÂÛÎÔÊ]{2,})\s+([A-ZÉÈÀÂÛÎÔÊ]{2,})\b', full_text)
+    if match_names:
+        first, second = match_names.groups()
+        # Choisir ordre probable (prénom avant nom si connu)
+        prenom, nom = first, second
 
-    # Fallback MRZ
+    # Fallback : lignes majuscules
+    if not nom or not prenom:
+        majuscules = [l for l in lines if re.fullmatch(r"[A-ZÉÈÀÂÛÎÔÊ\- ]{3,30}", l)]
+        if len(majuscules) >= 2:
+            prenom = majuscules[0].strip()
+            nom = majuscules[1].strip()
+
+    # MRZ fallback
     if not nom or not prenom:
         mrz_line = next((l for l in lines if '<<' in l), None)
         if mrz_line:
